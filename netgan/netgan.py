@@ -463,7 +463,7 @@ class NetGAN:
 
         for _it in range(max_iters):
 
-            if _it > 0 and _it % (2500) == 0:
+            if _it > 0 and _it % (1) == 0:
                 t = time.time() - starting_time
                 print('{:<7}/{:<8} training iterations, took {} seconds so far...'.format(_it, max_iters, int(t)))
 

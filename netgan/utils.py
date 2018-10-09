@@ -6,7 +6,6 @@ import warnings
 from matplotlib import pyplot as plt
 import igraph
 import powerlaw
-from numba import jit
 
 
 def load_npz(file_name):
@@ -330,7 +329,7 @@ def score_matrix_from_random_walks(random_walks, N, symmetric=True):
                         shape=[N, N])
     return mat
 
-@jit(nopython=True)
+
 def random_walk(edges, node_ixs, rwlen, p=1, q=1, n_walks=1):
     N=len(node_ixs)
     

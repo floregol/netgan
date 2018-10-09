@@ -5,7 +5,7 @@ from scipy.sparse.csgraph import connected_components, minimum_spanning_tree
 import warnings
 from matplotlib import pyplot as plt
 import igraph
-import powerlaw
+#import powerlaw
 
 
 def load_npz(file_name):
@@ -638,7 +638,7 @@ def statistics_power_law_alpha(A_in):
     """
 
     degrees = A_in.sum(axis=0)
-    return powerlaw.Fit(degrees, xmin=max(np.min(degrees),1)).power_law.alpha
+    return 0#powerlaw.Fit(degrees, xmin=max(np.min(degrees),1)).power_law.alpha
 
 
 def statistics_gini(A_in):

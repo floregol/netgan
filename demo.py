@@ -13,7 +13,7 @@ from matplotlib import pyplot as plt
 from sklearn.metrics import roc_auc_score, average_precision_score
 import time
 
-get_ipython().run_line_magic('matplotlib', 'inline')
+# get_ipython().run_line_magic('matplotlib', 'inline')
 
 
 # #### Load the data

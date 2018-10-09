@@ -597,7 +597,7 @@ class NetGAN:
             'generated_graphs': graphs
         }
 
-        pk.dump({"graph": graphs}, open("a.p", 'wb'))
+        pk.dump({"graph": graphs}, open("adj.p", 'wb'))
         return log_dict
 
 

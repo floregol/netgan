@@ -16,17 +16,37 @@ import numpy as np
 from sklearn.metrics import roc_auc_score, average_precision_score
 import os
 from matplotlib import pyplot as plt
+import pickle as pk
+
 
 class NetGAN:
     """
     NetGAN class, an implicit generative model for graphs using random walks.
     """
 
-    def __init__(self, N, rw_len, walk_generator, generator_layers=[40], discriminator_layers=[30],
-                 W_down_generator_size=128, W_down_discriminator_size=128, batch_size=128, noise_dim=16,
-                 noise_type="Gaussian", learning_rate=0.0003, disc_iters=3, wasserstein_penalty=10,
-                 l2_penalty_generator=1e-7, l2_penalty_discriminator=5e-5, temp_start=5.0, min_temperature=0.5,
-                 temperature_decay=1-5e-5, seed=15, gpu_id=0, use_gumbel=True, legacy_generator=False):
+    def __init__(self,
+                 N,
+                 rw_len,
+                 walk_generator,
+                 generator_layers=[40],
+                 discriminator_layers=[30],
+                 W_down_generator_size=128,
+                 W_down_discriminator_size=128,
+                 batch_size=128,
+                 noise_dim=16,
+                 noise_type="Gaussian",
+                 learning_rate=0.0003,
+                 disc_iters=3,
+                 wasserstein_penalty=10,
+                 l2_penalty_generator=1e-7,
+                 l2_penalty_discriminator=5e-5,
+                 temp_start=5.0,
+                 min_temperature=0.5,
+                 temperature_decay=1 - 5e-5,
+                 seed=15,
+                 gpu_id=0,
+                 use_gumbel=True,
+                 legacy_generator=False):
         """
         Initialize NetGAN.
 
@@ -113,32 +133,37 @@ class NetGAN:
         self.noise_dim = self.params['noise_dim']
         self.G_layers = self.params['Generator_Layers']
         self.D_layers = self.params['Discriminator_Layers']
-        self.tau = tf.placeholder(1.0 , shape=(), name="temperature")
+        self.tau = tf.placeholder(1.0, shape=(), name="temperature")
 
         # W_down and W_up for generator and discriminator
-        self.W_down_generator = tf.get_variable('Generator.W_Down',
-                                                shape=[self.N, self.params['W_Down_Generator_size']],
-                                                dtype=tf.float32,
-                                                initializer=tf.contrib.layers.xavier_initializer())
+        self.W_down_generator = tf.get_variable(
+            'Generator.W_Down',
+            shape=[self.N, self.params['W_Down_Generator_size']],
+            dtype=tf.float32,
+            initializer=tf.contrib.layers.xavier_initializer())
 
-        self.W_down_discriminator = tf.get_variable('Discriminator.W_Down',
-                                                    shape=[self.N, self.params['W_Down_Discriminator_size']],
-                                                    dtype=tf.float32,
-                                                    initializer=tf.contrib.layers.xavier_initializer())
+        self.W_down_discriminator = tf.get_variable(
+            'Discriminator.W_Down',
+            shape=[self.N, self.params['W_Down_Discriminator_size']],
+            dtype=tf.float32,
+            initializer=tf.contrib.layers.xavier_initializer())
 
-        self.W_up = tf.get_variable("Generator.W_up", shape = [self.G_layers[-1], self.N],
-                                    dtype=tf.float32,
-                                    initializer=tf.contrib.layers.xavier_initializer())
+        self.W_up = tf.get_variable(
+            "Generator.W_up",
+            shape=[self.G_layers[-1], self.N],
+            dtype=tf.float32,
+            initializer=tf.contrib.layers.xavier_initializer())
 
-        self.b_W_up = tf.get_variable("Generator.W_up_bias", dtype=tf.float32, initializer=tf.zeros_initializer,
-                                      shape=self.N)
+        self.b_W_up = tf.get_variable(
+            "Generator.W_up_bias", dtype=tf.float32, initializer=tf.zeros_initializer, shape=self.N)
 
         self.generator_function = self.generator_recurrent
         self.discriminator_function = self.discriminator_recurrent
 
-        self.fake_inputs = self.generator_function(self.params['batch_size'], reuse=False, gumbel=use_gumbel, legacy=legacy_generator)
-        self.fake_inputs_discrete = self.generate_discrete(self.params['batch_size'], reuse=True,
-                                                           gumbel=use_gumbel, legacy=legacy_generator)
+        self.fake_inputs = self.generator_function(
+            self.params['batch_size'], reuse=False, gumbel=use_gumbel, legacy=legacy_generator)
+        self.fake_inputs_discrete = self.generate_discrete(
+            self.params['batch_size'], reuse=True, gumbel=use_gumbel, legacy=legacy_generator)
 
         # Pre-fetch real random walks
         dataset = tf.data.Dataset.from_generator(walk_generator, tf.int32, [self.params['batch_size'], self.rw_len])
@@ -157,50 +182,45 @@ class NetGAN:
         self.gen_cost = -tf.reduce_mean(self.disc_fake)
 
         # WGAN lipschitz-penalty
-        alpha = tf.random_uniform(
-            shape=[self.params['batch_size'], 1, 1],
-            minval=0.,
-            maxval=1.
-        )
+        alpha = tf.random_uniform(shape=[self.params['batch_size'], 1, 1], minval=0., maxval=1.)
 
         self.differences = self.fake_inputs - self.real_inputs
         self.interpolates = self.real_inputs + (alpha * self.differences)
         self.gradients = tf.gradients(self.discriminator_function(self.interpolates, reuse=True), self.interpolates)[0]
         self.slopes = tf.sqrt(tf.reduce_sum(tf.square(self.gradients), reduction_indices=[1, 2]))
-        self.gradient_penalty = tf.reduce_mean((self.slopes - 1.) ** 2)
+        self.gradient_penalty = tf.reduce_mean((self.slopes - 1.)**2)
         self.disc_cost += self.params['Wasserstein_penalty'] * self.gradient_penalty
 
         # weight regularization; we omit W_down from regularization
-        self.disc_l2_loss = tf.add_n([ tf.nn.l2_loss(v) for v in tf.trainable_variables()
-                                     if 'Disc' in v.name
-                                     and not 'W_down' in v.name]) * self.params['l2_penalty_discriminator']
+        self.disc_l2_loss = tf.add_n([
+            tf.nn.l2_loss(v) for v in tf.trainable_variables() if 'Disc' in v.name and not 'W_down' in v.name
+        ]) * self.params['l2_penalty_discriminator']
         self.disc_cost += self.disc_l2_loss
 
         # weight regularization; we omit  W_down from regularization
-        self.gen_l2_loss = tf.add_n([ tf.nn.l2_loss(v) for v in tf.trainable_variables()
-                                     if 'Gen' in v.name
-                                     and not 'W_down' in v.name]) * self.params['l2_penalty_generator']
+        self.gen_l2_loss = tf.add_n([
+            tf.nn.l2_loss(v) for v in tf.trainable_variables() if 'Gen' in v.name and not 'W_down' in v.name
+        ]) * self.params['l2_penalty_generator']
         self.gen_cost += self.gen_l2_loss
 
         self.gen_params = [v for v in tf.trainable_variables() if 'Generator' in v.name]
         self.disc_params = [v for v in tf.trainable_variables() if 'Discriminator' in v.name]
 
-        self.gen_train_op = tf.train.AdamOptimizer(learning_rate=self.params['learning_rate'], beta1=0.5,
-                                                   beta2=0.9).minimize(self.gen_cost, var_list=self.gen_params)
-        self.disc_train_op = tf.train.AdamOptimizer(learning_rate=self.params['learning_rate'], beta1=0.5,
-                                                    beta2=0.9).minimize(self.disc_cost, var_list=self.disc_params)
+        self.gen_train_op = tf.train.AdamOptimizer(
+            learning_rate=self.params['learning_rate'], beta1=0.5, beta2=0.9).minimize(
+                self.gen_cost, var_list=self.gen_params)
+        self.disc_train_op = tf.train.AdamOptimizer(
+            learning_rate=self.params['learning_rate'], beta1=0.5, beta2=0.9).minimize(
+                self.disc_cost, var_list=self.disc_params)
 
         if gpu_id is None:
-            config = tf.ConfigProto(
-                device_count={'GPU': 0}
-            )
+            config = tf.ConfigProto(device_count={'GPU': 0})
         else:
             gpu_options = tf.GPUOptions(visible_device_list='{}'.format(gpu_id), allow_growth=True)
             config = tf.ConfigProto(gpu_options=gpu_options)
 
         self.session = tf.InteractiveSession(config=config)
         self.init_op = tf.global_variables_initializer()
-
 
     def generate_discrete(self, n_samples, reuse=True, z=None, gumbel=True, legacy=False):
         """
@@ -269,25 +289,37 @@ class NetGAN:
             initial_states = []
 
             # Noise preprocessing
-            for ix,size in enumerate(self.G_layers):
-                if legacy: # old version to initialize LSTM. new version has less parameters and performs just as good.
-                    h_intermediate = tf.layers.dense(initial_states_noise, size, name="Generator.h_int_{}".format(ix+1),
-                                                     reuse=reuse, activation=tf.nn.tanh)
-                    h = tf.layers.dense(h_intermediate, size, name="Generator.h_{}".format(ix+1), reuse=reuse,
-                                        activation=tf.nn.tanh)
+            for ix, size in enumerate(self.G_layers):
+                if legacy:  # old version to initialize LSTM. new version has less parameters and performs just as good.
+                    h_intermediate = tf.layers.dense(
+                        initial_states_noise,
+                        size,
+                        name="Generator.h_int_{}".format(ix + 1),
+                        reuse=reuse,
+                        activation=tf.nn.tanh)
+                    h = tf.layers.dense(
+                        h_intermediate, size, name="Generator.h_{}".format(ix + 1), reuse=reuse, activation=tf.nn.tanh)
 
-                    c_intermediate = tf.layers.dense(initial_states_noise, size, name="Generator.c_int_{}".format(ix+1),
-                                                     reuse=reuse, activation=tf.nn.tanh)
-                    c = tf.layers.dense(c_intermediate, size, name="Generator.c_{}".format(ix+1), reuse=reuse,
-                                        activation=tf.nn.tanh)
-                    
+                    c_intermediate = tf.layers.dense(
+                        initial_states_noise,
+                        size,
+                        name="Generator.c_int_{}".format(ix + 1),
+                        reuse=reuse,
+                        activation=tf.nn.tanh)
+                    c = tf.layers.dense(
+                        c_intermediate, size, name="Generator.c_{}".format(ix + 1), reuse=reuse, activation=tf.nn.tanh)
+
                 else:
-                    intermediate = tf.layers.dense(initial_states_noise, size, name="Generator.int_{}".format(ix+1),
-                                                     reuse=reuse, activation=tf.nn.tanh)
-                    h = tf.layers.dense(intermediate, size, name="Generator.h_{}".format(ix+1), reuse=reuse,
-                                        activation=tf.nn.tanh)
-                    c = tf.layers.dense(intermediate, size, name="Generator.c_{}".format(ix+1), reuse=reuse,
-                                        activation=tf.nn.tanh)
+                    intermediate = tf.layers.dense(
+                        initial_states_noise,
+                        size,
+                        name="Generator.int_{}".format(ix + 1),
+                        reuse=reuse,
+                        activation=tf.nn.tanh)
+                    h = tf.layers.dense(
+                        intermediate, size, name="Generator.h_{}".format(ix + 1), reuse=reuse, activation=tf.nn.tanh)
+                    c = tf.layers.dense(
+                        intermediate, size, name="Generator.c_{}".format(ix + 1), reuse=reuse, activation=tf.nn.tanh)
                 initial_states.append((c, h))
 
             state = initial_states
@@ -307,7 +339,7 @@ class NetGAN:
 
                 # Perform Gumbel softmax to ensure gradients flow
                 if gumbel:
-                    output = gumbel_softmax(output_bef, temperature=self.tau, hard = True)
+                    output = gumbel_softmax(output_bef, temperature=self.tau, hard=True)
                 else:
                     output = tf.nn.softmax(output_bef)
 
@@ -348,17 +380,28 @@ class NetGAN:
 
             disc_lstm_cell = tf.contrib.rnn.MultiRNNCell([lstm_cell(size) for size in self.D_layers])
 
-            output_disc, state_disc = tf.contrib.rnn.static_rnn(cell=disc_lstm_cell, inputs=tf.unstack(output, axis=1),
-                                                              dtype='float32')
+            output_disc, state_disc = tf.contrib.rnn.static_rnn(
+                cell=disc_lstm_cell, inputs=tf.unstack(output, axis=1), dtype='float32')
 
             last_output = output_disc[-1]
 
             final_score = tf.layers.dense(last_output, 1, reuse=reuse, name="Discriminator.Out")
             return final_score
 
-    def train(self, A_orig, val_ones, val_zeros,  max_iters=50000, stopping=None, eval_transitions=15e6,
-              transitions_per_iter=150000, max_patience=5, eval_every=500, plot_every=-1, save_directory="../snapshots",
-              model_name=None, continue_training=False):
+    def train(self,
+              A_orig,
+              val_ones,
+              val_zeros,
+              max_iters=50000,
+              stopping=None,
+              eval_transitions=15e6,
+              transitions_per_iter=150000,
+              max_patience=5,
+              eval_every=500,
+              plot_every=-1,
+              save_directory="../snapshots",
+              model_name=None,
+              continue_training=False):
         """
 
         Parameters
@@ -446,7 +489,7 @@ class NetGAN:
         disc_losses = []
         graphs = []
         val_performances = []
-        eo=[]
+        eo = []
         temperature = self.params['temp_start']
 
         starting_time = time.time()
@@ -454,10 +497,10 @@ class NetGAN:
 
         transitions_per_walk = self.rw_len - 1
         # Sample lots of random walks, used for evaluation of model.
-        sample_many_count = int(np.round(transitions_per_iter/transitions_per_walk))
+        sample_many_count = int(np.round(transitions_per_iter / transitions_per_walk))
         sample_many = self.generate_discrete(sample_many_count, reuse=True)
-        n_eval_walks = eval_transitions/transitions_per_walk
-        n_eval_iters = int(np.round(n_eval_walks/sample_many_count))
+        n_eval_walks = eval_transitions / transitions_per_walk
+        n_eval_iters = int(np.round(n_eval_walks / sample_many_count))
 
         print("**** Starting training. ****")
 
@@ -468,16 +511,12 @@ class NetGAN:
                 print('{:<7}/{:<8} training iterations, took {} seconds so far...'.format(_it, max_iters, int(t)))
 
             # Generator training iteration
-            gen_loss, _ = self.session.run([self.gen_cost, self.gen_train_op],
-                                           feed_dict={self.tau: temperature})
+            gen_loss, _ = self.session.run([self.gen_cost, self.gen_train_op], feed_dict={self.tau: temperature})
 
             _disc_l = []
             # Multiple discriminator training iterations.
             for _ in range(self.params['disc_iters']):
-                disc_loss, _ = self.session.run(
-                    [self.disc_cost, self.disc_train_op],
-                    feed_dict={self.tau: temperature}
-                )
+                disc_loss, _ = self.session.run([self.disc_cost, self.disc_train_op], feed_dict={self.tau: temperature})
                 _disc_l.append(disc_loss)
 
             gen_losses.append(gen_loss)
@@ -506,18 +545,17 @@ class NetGAN:
 
                 # Compute Validation ROC-AUC and average precision scores.
                 val_performances.append((roc_auc_score(actual_labels_val, edge_scores),
-                                               average_precision_score(actual_labels_val, edge_scores)))
+                                         average_precision_score(actual_labels_val, edge_scores)))
 
                 # Update Gumbel temperature
-                temperature = np.maximum(self.params['temp_start'] * np.exp(-(1-self.params['temperature_decay']) * _it),
-                                         self.params['min_temperature'])
+                temperature = np.maximum(
+                    self.params['temp_start'] * np.exp(-(1 - self.params['temperature_decay']) * _it),
+                    self.params['min_temperature'])
 
-                print("**** Iter {:<6} Val ROC {:.3f}, AP: {:.3f}, EO {:.3f} ****".format(_it,
-                                                                               val_performances[-1][0],
-                                                                               val_performances[-1][1],
-                                                                               edge_overlap/A_orig.sum()))
+                print("**** Iter {:<6} Val ROC {:.3f}, AP: {:.3f}, EO {:.3f} ****".format(
+                    _it, val_performances[-1][0], val_performances[-1][1], edge_overlap / A_orig.sum()))
 
-                if stopping is None:   # Evaluate VAL criterion
+                if stopping is None:  # Evaluate VAL criterion
                     if np.sum(val_performances[-1]) > best_performance:
                         # New "best" model
                         best_performance = np.sum(val_performances[-1])
@@ -529,11 +567,11 @@ class NetGAN:
                     if patience == 0:
                         print("**** EARLY STOPPING AFTER {} ITERATIONS ****".format(_it))
                         break
-                elif edge_overlap/A_orig.sum() >= stopping:   # Evaluate EO criterion
+                elif edge_overlap / A_orig.sum() >= stopping:  # Evaluate EO criterion
                     print("**** EARLY STOPPING AFTER {} ITERATIONS ****".format(_it))
                     break
-                    
-            if plot_every > 0 and (_it+1) % plot_every == 0:
+
+            if plot_every > 0 and (_it + 1) % plot_every == 0:
                 if len(disc_losses) > 10:
                     plt.plot(disc_losses[9::], label="Critic loss")
                     plt.plot(gen_losses[9::], label="Generator loss")
@@ -551,8 +589,15 @@ class NetGAN:
         if stopping is None:
             saver.restore(self.session, save_file)
         #### Training completed.
-        log_dict = {"disc_losses": disc_losses, 'gen_losses': gen_losses, 'val_performances': val_performances,
-                    'edge_overlaps': eo, 'generated_graphs': graphs}
+        log_dict = {
+            "disc_losses": disc_losses,
+            'gen_losses': gen_losses,
+            'val_performances': val_performances,
+            'edge_overlaps': eo,
+            'generated_graphs': graphs
+        }
+
+        pk.dump({"graph": graphs}, open("a.p", 'wb'))
         return log_dict
 
 
